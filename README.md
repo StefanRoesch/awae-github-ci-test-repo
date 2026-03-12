@@ -9,12 +9,13 @@ Test repository for the customer-facing **`ci/awae.github-ci.yml`** — the GitH
 | `ci/awae.github-ci.yml` | **Customer-facing.** GitHub Actions workflow (URL-in, report-out; SARIF → Code Scanning). |
 | `ci/awae.gitlab-ci.yml` | GitLab CI includeable template (URL-in, report-out; MR Accessibility widget). Kept for reference. |
 | `ci/README.md` | Docs for both templates. |
-| `.github/workflows/test-awae-accessibility.yml` | **Test-only.** Serves `public/` via Python, exposes with Cloudflare quick tunnel → runs a11y script → uploads SARIF. Not for customers. |
+| `.github/workflows/awae-accessibility.yml` | Reusable workflow (template): one a11y job. Used by test workflow and for customers who copy it. |
+| `.github/workflows/test-awae-accessibility.yml` | **Test-only.** Like awae-project-zero: serve job provides AWAE_URLS, then calls `awae-accessibility.yml` (no duplicated script). Not for customers. |
 | `public/` | ACT test pages; used only by the test workflow. |
 
 ## Required GitHub secrets (for this test repo)
 
-Store these in **Settings → Environments** (e.g. create an environment named `awae`) **or** in **Settings → Secrets and variables → Actions → Secrets**:
+Store these in **Settings → Environments** (e.g. create an environment named `dev`) **or** in **Settings → Secrets and variables → Actions → Secrets**:
 
 | Secret | Description |
 |--------|-------------|
