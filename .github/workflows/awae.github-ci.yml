@@ -1,7 +1,7 @@
 # AWAE a11y check — GitHub Actions workflow (generic, URL-in report-out).
 # Copy this file to .github/workflows/awae-accessibility.yml in your repo (or use workflow_call from another workflow).
 #
-# Required: Set secrets AWAE_HOST, AWAE_API_TOKEN, AWAE_USER_ID.
+# Required: AWAE_HOST and AWAE_USER_ID (environment/repo variables), AWAE_API_TOKEN (secret).
 # Required: Set AWAE_URLS — when triggered by push/pull_request use vars.AWAE_URLS;
 #   when called via workflow_call pass awae_urls as input (e.g. from a serve job).
 #
@@ -16,12 +16,16 @@ on:
         description: "Comma-separated URLs to scan (when called from another workflow, e.g. test repo serve job)"
         required: false
         type: string
+      awae_host:
+        description: "AWAE API host URL (when caller passes env var; else use vars.AWAE_HOST)"
+        required: false
+        type: string
+      awae_user_id:
+        description: "AWAE user UUID (when caller passes env var; else use vars.AWAE_USER_ID)"
+        required: false
+        type: string
     secrets:
-      AWAE_HOST:
-        required: false
       AWAE_API_TOKEN:
-        required: false
-      AWAE_USER_ID:
         required: false
   push:
     branches: [main]
@@ -36,10 +40,10 @@ jobs:
     # Customers who copy this file: set the same environment name, or remove this line and use repo-level secrets.
     environment: dev
     env:
-      # When called: caller passes these via secrets. When run standalone: from job environment (environment: dev).
-      AWAE_HOST: ${{ secrets.AWAE_HOST }}
+      # AWAE_HOST and AWAE_USER_ID: from input (when called) or env vars (standalone). AWAE_API_TOKEN: secret only.
+      AWAE_HOST: ${{ inputs.awae_host || vars.AWAE_HOST }}
+      AWAE_USER_ID: ${{ inputs.awae_user_id || vars.AWAE_USER_ID }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
-      AWAE_USER_ID: ${{ secrets.AWAE_USER_ID }}
       # When called: use input. When run standalone: use repo variable.
       AWAE_URLS: ${{ inputs.awae_urls || vars.AWAE_URLS }}
       AWAE_ACCESSIBILITY_FORMAT: sarif
@@ -62,7 +66,7 @@ jobs:
 
           # --- Validate required CI/CD variables ---
           if [ -z "${AWAE_HOST}" ] || [ -z "${AWAE_API_TOKEN}" ] || [ -z "${AWAE_USER_ID}" ]; then
-            echo "ERROR: Set secrets AWAE_HOST, AWAE_API_TOKEN, AWAE_USER_ID"
+            echo "ERROR: Set AWAE_HOST and AWAE_USER_ID (vars) and AWAE_API_TOKEN (secret) in the environment or repo"
             exit 1
           fi
           if [ -z "${AWAE_URLS}" ]; then
