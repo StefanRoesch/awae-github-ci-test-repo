@@ -19,6 +19,11 @@ on:
         description: "AWAE API bearer token"
         required: true
 
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+
 jobs:
   a11y-check:
     runs-on: ubuntu-latest

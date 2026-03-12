@@ -9,6 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  security-events: write
+  actions: read
+  contents: read
+
 jobs:
   serve:
     runs-on: ubuntu-latest
