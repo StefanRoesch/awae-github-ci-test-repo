@@ -1,32 +1,28 @@
-# AWAE a11y check — reusable workflow only. Caller passes all inputs and the secret.
-# One way: workflow_call with required inputs awae_urls, awae_host, awae_user_id and secret AWAE_API_TOKEN.
+# AWAE a11y check — reusable workflow (workflow_call only).
+# Caller passes environment name + URL list. The workflow reads credentials
+# from the GitHub Environment (vars.AWAE_HOST, vars.AWAE_USER_ID, secrets.AWAE_API_TOKEN).
 name: AWAE Accessibility Check
 
 on:
   workflow_call:
     inputs:
+      environment:
+        description: "GitHub Environment that holds AWAE_HOST, AWAE_USER_ID vars and AWAE_API_TOKEN secret"
+        required: true
+        type: string
       awae_urls:
         description: "Comma-separated URLs to scan"
         required: true
         type: string
-      awae_host:
-        description: "AWAE API host URL (no trailing slash)"
-        required: true
-        type: string
-      awae_user_id:
-        description: "AWAE user UUID"
-        required: true
-        type: string
-    secrets:
-      AWAE_API_TOKEN:
-        required: true
 
 jobs:
   a11y-check:
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
     env:
-      AWAE_HOST: ${{ inputs.awae_host }}
-      AWAE_USER_ID: ${{ inputs.awae_user_id }}
+      AWAE_HOST: ${{ vars.AWAE_HOST }}
+      AWAE_USER_ID: ${{ vars.AWAE_USER_ID }}
       AWAE_URLS: ${{ inputs.awae_urls }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
       AWAE_ACCESSIBILITY_FORMAT: sarif
@@ -48,11 +44,11 @@ jobs:
           echo "AWAE a11y check started"
 
           if [ -z "${AWAE_HOST}" ] || [ -z "${AWAE_API_TOKEN}" ] || [ -z "${AWAE_USER_ID}" ]; then
-            echo "ERROR: Set awae_host, awae_user_id (inputs) and AWAE_API_TOKEN (secret)"
+            echo "ERROR: Environment '${{ inputs.environment }}' must have vars AWAE_HOST, AWAE_USER_ID and secret AWAE_API_TOKEN"
             exit 1
           fi
           if [ -z "${AWAE_URLS}" ]; then
-            echo "ERROR: Set awae_urls (comma-separated list of reachable URLs to scan)"
+            echo "ERROR: awae_urls input must be a comma-separated list of reachable URLs"
             exit 1
           fi
 
@@ -61,11 +57,10 @@ jobs:
           POLL_MAX_SECONDS=$(( POLL_MAX_MINUTES * 60 ))
           jitter_s() { delay=$1; echo $(( delay + $(od -An -N1 -i /dev/urandom 2>/dev/null | tr -d ' ') % 4 )); }
 
-          echo "Using provided AWAE_URLS"
           URLS_JSON=$(echo "${AWAE_URLS}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           COUNT=$(echo "$URLS_JSON" | jq 'length')
           if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: awae_urls is set but contains no valid URLs (comma-separated)"
+            echo "ERROR: awae_urls is set but contains no valid URLs"
             exit 1
           fi
           echo "Sending $COUNT URL(s) to AWAE"

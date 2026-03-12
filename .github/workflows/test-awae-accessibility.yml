@@ -1,6 +1,5 @@
 # Test workflow for awae.github-ci.yml — this repo only.
-# Serve job provides a short AWAE_URLS list (first 5 HTML pages) and calls the reusable workflow.
-# Template stays clean: one input awae_urls. We keep the list short so it passes through reliably.
+# Serve job exposes public/ via Cloudflare tunnel, builds URL list, calls the reusable workflow.
 name: Test AWAE Accessibility (serve + a11y)
 
 on:
@@ -45,23 +44,17 @@ jobs:
             exit 1
           fi
           BASE="${TEST_SITE_BASE%/}/"
-          # Build full list, then take first 5 URLs so job output stays small and passes to reusable workflow
           ALL_URLS=$(find public -type f -name "*.html" 2>/dev/null | sed 's|^public/||' | while read path; do echo "${BASE}${path}"; done | tr '\n' ',' | sed 's/,$//')
           AWAE_URLS=$(echo "$ALL_URLS" | tr ',' '\n' | head -5 | tr '\n' ',' | sed 's/,$//')
-          # Use delimiter syntax (GitHub docs) so special chars in URLs don't break the job output
-          echo "awae_urls<<AWAE_URLS_EOF" >> $GITHUB_OUTPUT
-          echo "$AWAE_URLS" >> $GITHUB_OUTPUT
-          echo "AWAE_URLS_EOF" >> $GITHUB_OUTPUT
+          echo "awae_urls<<AWAE_URLS_EOF" >> "$GITHUB_OUTPUT"
+          echo "$AWAE_URLS" >> "$GITHUB_OUTPUT"
+          echo "AWAE_URLS_EOF" >> "$GITHUB_OUTPUT"
           echo "Tunnel base: $BASE"
           echo "URL count: $(echo "$AWAE_URLS" | tr ',' '\n' | wc -l)"
 
   a11y-check:
     needs: serve
-    environment: dev
     uses: ./.github/workflows/awae.github-ci.yml
     with:
+      environment: dev
       awae_urls: ${{ needs.serve.outputs.awae_urls }}
-      awae_host: ${{ vars.AWAE_HOST }}
-      awae_user_id: ${{ vars.AWAE_USER_ID }}
-    secrets:
-      AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
