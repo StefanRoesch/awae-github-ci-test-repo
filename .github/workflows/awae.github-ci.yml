@@ -38,6 +38,9 @@ jobs:
       CI_COMMIT_REF_NAME: ${{ github.ref_name }}
       CI_COMMIT_SHORT_SHA: ${{ github.sha }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install curl and jq
         run: |
           sudo apt-get update -qq
@@ -162,9 +165,6 @@ jobs:
           if [ "${AWAE_DOWNLOAD_QUALWEB}" = "true" ]; then
             curl -f -OJ "$AWAE_HOST/api/reports/$REPORT_ID/evaluations/$EVAL_ID/qualweb" -H "Authorization: Bearer $AWAE_API_TOKEN" || true
           fi
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
 
       - name: Normalize SARIF URIs for Code Scanning
         run: |
