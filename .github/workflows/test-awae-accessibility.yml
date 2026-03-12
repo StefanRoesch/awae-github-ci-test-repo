@@ -1,0 +1,178 @@
+# Test workflow for ci/awae.github-ci.yml — this repo only.
+# Serves public/ via localtunnel to provide AWAE_URLS; then runs the same a11y logic as the customer template.
+# Not offered to customers: they provide their own URLs.
+name: Test AWAE Accessibility (serve + a11y)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  serve-and-a11y:
+    runs-on: ubuntu-latest
+    env:
+      AWAE_HOST: ${{ secrets.AWAE_HOST }}
+      AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
+      AWAE_USER_ID: ${{ secrets.AWAE_USER_ID }}
+      AWAE_ACCESSIBILITY_FORMAT: sarif
+      AWAE_REPORT_FILE: results.sarif
+      AWAE_POLL_INTERVAL: "15"
+      AWAE_POLL_MAX_MINUTES: "10"
+      CI_PROJECT_NAME: ${{ github.repository }}
+      CI_COMMIT_REF_NAME: ${{ github.ref_name }}
+      CI_COMMIT_SHORT_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js, curl, jq
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl jq
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y -qq nodejs
+
+      - name: Serve public/ and expose via localtunnel
+        id: tunnel
+        run: |
+          npx -y http-server public -p 8080 &
+          sleep 2
+          npx -y localtunnel --port 8080 2>&1 | tee tunnel.log &
+          sleep 5
+          TEST_SITE_BASE=$(grep -oE 'https://[a-zA-Z0-9.-]+\.loca\.lt' tunnel.log | head -1)
+          if [ -z "$TEST_SITE_BASE" ]; then
+            echo "Failed to get tunnel URL"
+            cat tunnel.log
+            exit 1
+          fi
+          BASE="${TEST_SITE_BASE%/}/"
+          AWAE_URLS=$(find public -type f -name "*.html" 2>/dev/null | sed 's|^public/||' | while read path; do echo "${BASE}${path}"; done | tr '\n' ',' | sed 's/,$//')
+          echo "AWAE_URLS=$AWAE_URLS" >> $GITHUB_ENV
+          echo "Tunnel base: $BASE"
+          echo "URL count: $(echo "$AWAE_URLS" | tr ',' '\n' | wc -l)"
+
+      - name: Run AWAE a11y check
+        run: |
+          set -e
+          echo "AWAE a11y check started"
+
+          if [ -z "${AWAE_HOST}" ] || [ -z "${AWAE_API_TOKEN}" ] || [ -z "${AWAE_USER_ID}" ]; then
+            echo "ERROR: Set secrets AWAE_HOST, AWAE_API_TOKEN, AWAE_USER_ID"
+            exit 1
+          fi
+          if [ -z "${AWAE_URLS}" ]; then
+            echo "ERROR: Set variable AWAE_URLS (comma-separated list of reachable URLs to scan)."
+            exit 1
+          fi
+
+          POLL_INTERVAL="${AWAE_POLL_INTERVAL:-15}"
+          POLL_MAX_MINUTES="${AWAE_POLL_MAX_MINUTES:-10}"
+          POLL_MAX_SECONDS=$(( POLL_MAX_MINUTES * 60 ))
+          jitter_s() { delay=$1; echo $(( delay + $(od -An -N1 -i /dev/urandom 2>/dev/null | tr -d ' ') % 4 )); }
+
+          echo "Using provided AWAE_URLS"
+          URLS_JSON=$(echo "${AWAE_URLS}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+          COUNT=$(echo "$URLS_JSON" | jq 'length')
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: AWAE_URLS is set but contains no valid URLs (comma-separated)."
+            exit 1
+          fi
+          echo "Sending $COUNT URL(s) to AWAE"
+
+          TITLE="${AWAE_TITLE:-$CI_PROJECT_NAME}"
+          DESC="$CI_COMMIT_REF_NAME @ $CI_COMMIT_SHORT_SHA"
+          BODY=$(jq -n --arg title "$TITLE" --arg desc "$DESC" --arg uid "$AWAE_USER_ID" --argjson urls "$URLS_JSON" '{title: $title, description: $desc, user_id: $uid, urls: $urls}')
+
+          REPORT_ID=""
+          POST_ATTEMPTS=0
+          POST_MAX=3
+          T_INITIAL=5
+          T_MAX=60
+          while [ $POST_ATTEMPTS -lt $POST_MAX ]; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$AWAE_HOST/api/reports" -H "Authorization: Bearer $AWAE_API_TOKEN" -H "Content-Type: application/json" -d "$BODY")
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY_ONLY=$(echo "$RESPONSE" | sed '$d')
+            REPORT_ID=$(echo "$BODY_ONLY" | jq -r '.report_id')
+            if [ "$HTTP_CODE" = "202" ] && [ -n "$REPORT_ID" ] && [ "$REPORT_ID" != "null" ]; then
+              break
+            fi
+            POST_ATTEMPTS=$(( POST_ATTEMPTS + 1 ))
+            echo "POST attempt $POST_ATTEMPTS failed (HTTP $HTTP_CODE)"
+            if [ $POST_ATTEMPTS -ge $POST_MAX ]; then
+              echo "Failed to create report after $POST_MAX attempts: $BODY_ONLY"
+              exit 1
+            fi
+            BACKOFF=$(( T_INITIAL * (1 << (POST_ATTEMPTS - 1)) ))
+            [ $BACKOFF -gt $T_MAX ] && BACKOFF=$T_MAX
+            SLEEP=$(jitter_s $BACKOFF)
+            echo "Backoff ${SLEEP}s before retry"
+            sleep $SLEEP
+          done
+          echo "Report created: $REPORT_ID"
+
+          STATUS=""
+          POLL_COUNT=0
+          POLL_FAILURES=0
+          POLL_FAIL_MAX=5
+          T_POLL_INITIAL=10
+          T_POLL_MAX=120
+          START=$(date +%s)
+          while true; do
+            NOW=$(date +%s)
+            if [ $(( NOW - START )) -ge $POLL_MAX_SECONDS ]; then
+              echo "Timeout after ${POLL_MAX_MINUTES} minutes waiting for evaluation"
+              exit 1
+            fi
+            POLL_RESP=$(curl -s -w "\n%{http_code}" "$AWAE_HOST/api/reports/$REPORT_ID" -H "Authorization: Bearer $AWAE_API_TOKEN") || true
+            POLL_HTTP=$(echo "$POLL_RESP" | tail -n1)
+            POLL_BODY=$(echo "$POLL_RESP" | sed '$d')
+            STATUS=$(echo "$POLL_BODY" | jq -r '.evaluations[0].status // empty')
+            if [ "$POLL_HTTP" = "200" ] && [ -n "$STATUS" ]; then
+              POLL_FAILURES=0
+              POLL_COUNT=$(( POLL_COUNT + 1 ))
+              echo "Poll #$POLL_COUNT status=$STATUS"
+              case "$STATUS" in
+                done) break ;;
+                failed) echo "Evaluation failed"; exit 1 ;;
+                *) ;;
+              esac
+              sleep $POLL_INTERVAL
+            else
+              POLL_FAILURES=$(( POLL_FAILURES + 1 ))
+              echo "Poll failed (HTTP $POLL_HTTP or invalid body), consecutive failures: $POLL_FAILURES"
+              if [ $POLL_FAILURES -ge $POLL_FAIL_MAX ]; then
+                echo "Circuit breaker: polling failed after $POLL_FAIL_MAX consecutive errors"
+                exit 1
+              fi
+              BACKOFF=$(( T_POLL_INITIAL * (1 << (POLL_FAILURES - 1)) ))
+              [ $BACKOFF -gt $T_POLL_MAX ] && BACKOFF=$T_POLL_MAX
+              SLEEP=$(jitter_s $BACKOFF)
+              echo "Backoff ${SLEEP}s before next poll"
+              sleep $SLEEP
+            fi
+          done
+
+          echo "Evaluation status: done"
+          EVAL_ID=$(curl -s "$AWAE_HOST/api/reports/$REPORT_ID" -H "Authorization: Bearer $AWAE_API_TOKEN" | jq -r '.evaluations[0].id')
+
+          REPORT_FILE="${AWAE_REPORT_FILE:-results.sarif}"
+          ACCESSIBILITY_URL="$AWAE_HOST/api/reports/$REPORT_ID/evaluations/$EVAL_ID/accessibility"
+          if [ -n "${AWAE_ACCESSIBILITY_FORMAT}" ]; then
+            ACCESSIBILITY_URL="${ACCESSIBILITY_URL}?format=${AWAE_ACCESSIBILITY_FORMAT}"
+          fi
+          curl -f -o "$REPORT_FILE" "$ACCESSIBILITY_URL" -H "Authorization: Bearer $AWAE_API_TOKEN"
+          VIOLATIONS=$(jq '.runs[0].results | length' "$REPORT_FILE" 2>/dev/null || echo "0")
+          echo "Downloaded $REPORT_FILE ($VIOLATIONS violation(s))"
+
+          if [ "${AWAE_DOWNLOAD_QUALWEB}" = "true" ]; then
+            curl -f -OJ "$AWAE_HOST/api/reports/$REPORT_ID/evaluations/$EVAL_ID/qualweb" -H "Authorization: Bearer $AWAE_API_TOKEN" || true
+          fi
+
+      - name: Upload SARIF to Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: awae-accessibility
