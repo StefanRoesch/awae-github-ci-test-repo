@@ -18,13 +18,9 @@ on:
 jobs:
   a11y-check:
     runs-on: ubuntu-latest
-    environment:
-      name: ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
     env:
-      AWAE_HOST: ${{ vars.AWAE_HOST }}
-      AWAE_USER_ID: ${{ vars.AWAE_USER_ID }}
       AWAE_URLS: ${{ inputs.awae_urls }}
-      AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
       AWAE_ACCESSIBILITY_FORMAT: sarif
       AWAE_REPORT_FILE: results.sarif
       AWAE_POLL_INTERVAL: "15"
@@ -39,6 +35,10 @@ jobs:
           sudo apt-get install -y -qq curl jq
 
       - name: Run AWAE a11y check
+        env:
+          AWAE_HOST: ${{ vars.AWAE_HOST }}
+          AWAE_USER_ID: ${{ vars.AWAE_USER_ID }}
+          AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
         run: |
           set -e
           echo "AWAE a11y check started"
