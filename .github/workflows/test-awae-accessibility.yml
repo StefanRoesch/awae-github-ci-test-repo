@@ -46,7 +46,10 @@ jobs:
           fi
           BASE="${TEST_SITE_BASE%/}/"
           AWAE_URLS=$(find public -type f -name "*.html" 2>/dev/null | sed 's|^public/||' | while read path; do echo "${BASE}${path}"; done | tr '\n' ',' | sed 's/,$//')
-          echo "awae_urls=$AWAE_URLS" >> $GITHUB_OUTPUT
+          # Use delimiter so long/comma-separated value is not truncated by GitHub
+          echo "awae_urls<<OUTPUT_EOF" >> $GITHUB_OUTPUT
+          echo "$AWAE_URLS" >> $GITHUB_OUTPUT
+          echo "OUTPUT_EOF" >> $GITHUB_OUTPUT
           echo "Tunnel base: $BASE"
           echo "URL count: $(echo "$AWAE_URLS" | tr ',' '\n' | wc -l)"
 
