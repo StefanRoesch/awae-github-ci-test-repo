@@ -163,6 +163,15 @@ jobs:
             curl -f -OJ "$AWAE_HOST/api/reports/$REPORT_ID/evaluations/$EVAL_ID/qualweb" -H "Authorization: Bearer $AWAE_API_TOKEN" || true
           fi
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Normalize SARIF URIs for Code Scanning
+        run: |
+          jq 'walk(if type == "object" and .uri? and (.uri | test("^https?://")) then .uri |= sub("^https?://[^/]+/"; "") else . end)' \
+            results.sarif > results-fixed.sarif
+          mv results-fixed.sarif results.sarif
+
       - name: Upload SARIF to Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         with:
