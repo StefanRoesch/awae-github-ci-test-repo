@@ -9,7 +9,7 @@ Test repository for the customer-facing **`ci/awae.github-ci.yml`** — the GitH
 | `ci/awae.github-ci.yml` | **Customer-facing.** GitHub Actions workflow (URL-in, report-out; SARIF → Code Scanning). |
 | `ci/awae.gitlab-ci.yml` | GitLab CI includeable template (URL-in, report-out; MR Accessibility widget). Kept for reference. |
 | `ci/README.md` | Docs for both templates. |
-| `.github/workflows/test-awae-accessibility.yml` | **Test-only.** Serves `public/` + tunnel → runs the same a11y script → uploads SARIF. Not for customers. |
+| `.github/workflows/test-awae-accessibility.yml` | **Test-only.** Serves `public/` via Python, exposes with Cloudflare quick tunnel → runs a11y script → uploads SARIF. Not for customers. |
 | `public/` | ACT test pages; used only by the test workflow. |
 
 ## Required GitHub secrets (for this test repo)

@@ -1,5 +1,5 @@
 # Test workflow for ci/awae.github-ci.yml — this repo only.
-# Serves public/ via localtunnel to provide AWAE_URLS; then runs the same a11y logic as the customer template.
+# Serves public/ via Python + Cloudflare quick tunnel to provide AWAE_URLS; then runs the same a11y logic as the customer template.
 # Not offered to customers: they provide their own URLs.
 name: Test AWAE Accessibility (serve + a11y)
 
@@ -28,23 +28,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js, curl, jq
+      - name: Install curl, jq, cloudflared
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq curl jq
-          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-          sudo apt-get install -y -qq nodejs
+          curl -sL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" -o cloudflared
+          chmod +x cloudflared
+          sudo mv cloudflared /usr/local/bin/
 
-      - name: Serve public/ and expose via localtunnel
+      - name: Serve public/ and expose via Cloudflare quick tunnel
         id: tunnel
         run: |
-          npx -y http-server public -p 8080 &
+          python3 -m http.server 8080 --directory public &
           sleep 2
-          npx -y localtunnel --port 8080 2>&1 | tee tunnel.log &
-          sleep 5
-          TEST_SITE_BASE=$(grep -oE 'https://[a-zA-Z0-9.-]+\.loca\.lt' tunnel.log | head -1)
+          cloudflared tunnel --url http://localhost:8080 2>&1 | tee tunnel.log &
+          echo "Waiting for tunnel URL (max 30s)..."
+          for i in $(seq 1 30); do
+            TEST_SITE_BASE=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' tunnel.log 2>/dev/null | head -1)
+            [ -n "$TEST_SITE_BASE" ] && break
+            sleep 1
+          done
           if [ -z "$TEST_SITE_BASE" ]; then
-            echo "Failed to get tunnel URL"
+            echo "Failed to get tunnel URL. tunnel.log:"
             cat tunnel.log
             exit 1
           fi
