@@ -1,6 +1,7 @@
 # Test workflow for awae.github-ci.yml — this repo only.
 # Like awae-project-zero: serve job provides AWAE_URLS, then we use the template (reusable workflow) for the a11y check.
 # No duplicated polling script; the a11y logic lives only in .github/workflows/awae.github-ci.yml.
+# URL list is passed via artifact so job-output limits/encoding do not drop it.
 name: Test AWAE Accessibility (serve + a11y)
 
 on:
@@ -13,8 +14,6 @@ on:
 jobs:
   serve:
     runs-on: ubuntu-latest
-    outputs:
-      awae_urls: ${{ steps.tunnel.outputs.awae_urls }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,19 +45,40 @@ jobs:
           fi
           BASE="${TEST_SITE_BASE%/}/"
           AWAE_URLS=$(find public -type f -name "*.html" 2>/dev/null | sed 's|^public/||' | while read path; do echo "${BASE}${path}"; done | tr '\n' ',' | sed 's/,$//')
-          # Use delimiter so long/comma-separated value is not truncated by GitHub
-          echo "awae_urls<<OUTPUT_EOF" >> $GITHUB_OUTPUT
-          echo "$AWAE_URLS" >> $GITHUB_OUTPUT
-          echo "OUTPUT_EOF" >> $GITHUB_OUTPUT
+          echo "$AWAE_URLS" > awae_urls.txt
           echo "Tunnel base: $BASE"
           echo "URL count: $(echo "$AWAE_URLS" | tr ',' '\n' | wc -l)"
 
-  a11y-check:
+      - name: Upload URL list
+        uses: actions/upload-artifact@v4
+        with:
+          name: awae-urls
+          path: awae_urls.txt
+
+  prepare-urls:
     needs: serve
+    runs-on: ubuntu-latest
+    outputs:
+      awae_urls: ${{ steps.read.outputs.awae_urls }}
+    steps:
+      - name: Download URL list
+        uses: actions/download-artifact@v4
+        with:
+          name: awae-urls
+
+      - name: Set awae_urls output
+        id: read
+        run: |
+          echo "awae_urls<<EOF" >> $GITHUB_OUTPUT
+          cat awae_urls.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  a11y-check:
+    needs: prepare-urls
     environment: dev
     uses: ./.github/workflows/awae.github-ci.yml
     with:
-      awae_urls: ${{ needs.serve.outputs.awae_urls }}
+      awae_urls: ${{ needs.prepare-urls.outputs.awae_urls }}
       awae_host: ${{ vars.AWAE_HOST }}
       awae_user_id: ${{ vars.AWAE_USER_ID }}
     secrets:
