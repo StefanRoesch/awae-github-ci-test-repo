@@ -16,6 +16,13 @@ on:
         description: "Comma-separated URLs to scan (when called from another workflow, e.g. test repo serve job)"
         required: false
         type: string
+    secrets:
+      AWAE_HOST:
+        required: false
+      AWAE_API_TOKEN:
+        required: false
+      AWAE_USER_ID:
+        required: false
   push:
     branches: [main]
   pull_request:
@@ -29,6 +36,7 @@ jobs:
     # Customers who copy this file: set the same environment name, or remove this line and use repo-level secrets.
     environment: dev
     env:
+      # When called: caller passes these via secrets. When run standalone: from job environment (environment: dev).
       AWAE_HOST: ${{ secrets.AWAE_HOST }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
       AWAE_USER_ID: ${{ secrets.AWAE_USER_ID }}
