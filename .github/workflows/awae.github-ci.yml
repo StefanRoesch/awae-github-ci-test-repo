@@ -25,6 +25,9 @@ on:
 jobs:
   a11y-check:
     runs-on: ubuntu-latest
+    # When called from test workflow (or run here): use dev environment so this job gets AWAE_* secrets from it.
+    # Customers who copy this file: set the same environment name, or remove this line and use repo-level secrets.
+    environment: dev
     env:
       AWAE_HOST: ${{ secrets.AWAE_HOST }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
