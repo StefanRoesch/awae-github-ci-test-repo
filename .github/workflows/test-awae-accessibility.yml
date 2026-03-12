@@ -58,3 +58,4 @@ jobs:
     with:
       environment: dev
       awae_urls: ${{ needs.serve.outputs.awae_urls }}
+    secrets: inherit
