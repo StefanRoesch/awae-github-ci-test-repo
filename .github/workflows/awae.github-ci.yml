@@ -1,51 +1,34 @@
-# AWAE a11y check — GitHub Actions workflow (generic, URL-in report-out).
-# Copy this file to .github/workflows/awae-accessibility.yml in your repo (or use workflow_call from another workflow).
-#
-# Required: AWAE_HOST and AWAE_USER_ID (environment/repo variables), AWAE_API_TOKEN (secret).
-# Required: Set AWAE_URLS — when triggered by push/pull_request use vars.AWAE_URLS;
-#   when called via workflow_call pass awae_urls as input (e.g. from a serve job).
-#
-# Multi-platform: The script below is platform-agnostic (validate, POST, poll, download).
-# Only the upload-sarif step is GitHub-specific.
+# AWAE a11y check — reusable workflow only. Caller passes all inputs and the secret.
+# One way: workflow_call with required inputs awae_urls, awae_host, awae_user_id and secret AWAE_API_TOKEN.
 name: AWAE Accessibility Check
 
 on:
   workflow_call:
     inputs:
       awae_urls:
-        description: "Comma-separated URLs to scan (when called from another workflow, e.g. test repo serve job)"
-        required: false
+        description: "Comma-separated URLs to scan"
+        required: true
         type: string
       awae_host:
-        description: "AWAE API host URL (when caller passes env var; else use vars.AWAE_HOST)"
-        required: false
+        description: "AWAE API host URL (no trailing slash)"
+        required: true
         type: string
       awae_user_id:
-        description: "AWAE user UUID (when caller passes env var; else use vars.AWAE_USER_ID)"
-        required: false
+        description: "AWAE user UUID"
+        required: true
         type: string
     secrets:
       AWAE_API_TOKEN:
-        required: false
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+        required: true
 
 jobs:
   a11y-check:
     runs-on: ubuntu-latest
-    # When called from test workflow (or run here): use dev environment so this job gets AWAE_* secrets from it.
-    # Customers who copy this file: set the same environment name, or remove this line and use repo-level secrets.
-    environment: dev
     env:
-      # AWAE_HOST and AWAE_USER_ID: from input (when called) or env vars (standalone). AWAE_API_TOKEN: secret only.
-      AWAE_HOST: ${{ inputs.awae_host || vars.AWAE_HOST }}
-      AWAE_USER_ID: ${{ inputs.awae_user_id || vars.AWAE_USER_ID }}
+      AWAE_HOST: ${{ inputs.awae_host }}
+      AWAE_USER_ID: ${{ inputs.awae_user_id }}
+      AWAE_URLS: ${{ inputs.awae_urls }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}
-      # When called: use input. When run standalone: use repo variable.
-      AWAE_URLS: ${{ inputs.awae_urls || vars.AWAE_URLS }}
       AWAE_ACCESSIBILITY_FORMAT: sarif
       AWAE_REPORT_FILE: results.sarif
       AWAE_POLL_INTERVAL: "15"
@@ -64,38 +47,33 @@ jobs:
           set -e
           echo "AWAE a11y check started"
 
-          # --- Validate required CI/CD variables ---
           if [ -z "${AWAE_HOST}" ] || [ -z "${AWAE_API_TOKEN}" ] || [ -z "${AWAE_USER_ID}" ]; then
-            echo "ERROR: Set AWAE_HOST and AWAE_USER_ID (vars) and AWAE_API_TOKEN (secret) in the environment or repo"
+            echo "ERROR: Set awae_host, awae_user_id (inputs) and AWAE_API_TOKEN (secret)"
             exit 1
           fi
           if [ -z "${AWAE_URLS}" ]; then
-            echo "ERROR: Set variable AWAE_URLS (comma-separated list of reachable URLs to scan)."
+            echo "ERROR: Set awae_urls (comma-separated list of reachable URLs to scan)"
             exit 1
           fi
 
-          # --- Polling config and jitter helper (adds 0–3s randomness to backoff) ---
           POLL_INTERVAL="${AWAE_POLL_INTERVAL:-15}"
           POLL_MAX_MINUTES="${AWAE_POLL_MAX_MINUTES:-10}"
           POLL_MAX_SECONDS=$(( POLL_MAX_MINUTES * 60 ))
           jitter_s() { delay=$1; echo $(( delay + $(od -An -N1 -i /dev/urandom 2>/dev/null | tr -d ' ') % 4 )); }
 
-          # --- Parse AWAE_URLS into JSON array and ensure at least one URL ---
           echo "Using provided AWAE_URLS"
           URLS_JSON=$(echo "${AWAE_URLS}" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
           COUNT=$(echo "$URLS_JSON" | jq 'length')
           if [ "$COUNT" -eq 0 ]; then
-            echo "ERROR: AWAE_URLS is set but contains no valid URLs (comma-separated)."
+            echo "ERROR: awae_urls is set but contains no valid URLs (comma-separated)"
             exit 1
           fi
           echo "Sending $COUNT URL(s) to AWAE"
 
-          # --- Build POST body (title, description, user_id, urls) ---
           TITLE="${AWAE_TITLE:-$CI_PROJECT_NAME}"
           DESC="$CI_COMMIT_REF_NAME @ $CI_COMMIT_SHORT_SHA"
           BODY=$(jq -n --arg title "$TITLE" --arg desc "$DESC" --arg uid "$AWAE_USER_ID" --argjson urls "$URLS_JSON" '{title: $title, description: $desc, user_id: $uid, urls: $urls}')
 
-          # --- Create report: POST with retry and exponential backoff (up to 3 attempts) ---
           REPORT_ID=""
           POST_ATTEMPTS=0
           POST_MAX=3
@@ -123,7 +101,6 @@ jobs:
           done
           echo "Report created: $REPORT_ID"
 
-          # --- Poll until evaluation is done or failed: fixed interval on success, backoff + circuit breaker on errors ---
           STATUS=""
           POLL_COUNT=0
           POLL_FAILURES=0
@@ -166,7 +143,6 @@ jobs:
             fi
           done
 
-          # --- Download accessibility report ---
           echo "Evaluation status: done"
           EVAL_ID=$(curl -s "$AWAE_HOST/api/reports/$REPORT_ID" -H "Authorization: Bearer $AWAE_API_TOKEN" | jq -r '.evaluations[0].id')
 
