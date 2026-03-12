@@ -14,6 +14,10 @@ on:
         description: "Comma-separated URLs to scan"
         required: true
         type: string
+    secrets:
+      AWAE_API_TOKEN:
+        description: "AWAE API bearer token"
+        required: true
 
 jobs:
   a11y-check:
