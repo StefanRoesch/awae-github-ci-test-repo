@@ -13,6 +13,8 @@ on:
 jobs:
   serve-and-a11y:
     runs-on: ubuntu-latest
+    # Required if you store AWAE_* secrets in an Environment (Settings → Environments). Use the same name as your environment.
+    environment: dev
     env:
       AWAE_HOST: ${{ secrets.AWAE_HOST }}
       AWAE_API_TOKEN: ${{ secrets.AWAE_API_TOKEN }}

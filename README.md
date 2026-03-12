@@ -14,13 +14,16 @@ Test repository for the customer-facing **`ci/awae.github-ci.yml`** — the GitH
 
 ## Required GitHub secrets (for this test repo)
 
-Configure in **Settings → Secrets and variables → Actions → Secrets**:
+Store these in **Settings → Environments** (e.g. create an environment named `awae`) **or** in **Settings → Secrets and variables → Actions → Secrets**:
 
 | Secret | Description |
 |--------|-------------|
 | `AWAE_HOST` | Base URL of the AWAE API (e.g. ngrok URL to your local awae), no trailing slash. |
 | `AWAE_API_TOKEN` | Bearer token for the API. |
 | `AWAE_USER_ID` | UUID of the user that owns the report. |
+
+- **If you use an Environment:** add the three secrets to that environment. The test workflow uses `environment: dev`; if your environment has a different name, change that in `.github/workflows/test-awae-accessibility.yml`.
+- **If you use repo secrets (no environment):** remove or comment out the `environment: dev` line in the workflow so the job sees repository-level secrets.
 
 The test workflow builds `AWAE_URLS` from the tunnel; you do not set it manually.
 
