@@ -35,4 +35,4 @@ The test workflow builds `AWAE_URLS` from the tunnel; you do not set it manually
 
 ## Offering the template to customers
 
-Give them **`ci/awae.github-ci.yml`** — one file, copy to `.github/workflows/awae-accessibility.yml`. Point them to `ci/README.md` for required secrets/variables. They set `AWAE_URLS`; the template does not build or serve their app.
+Give them **`ci/awae.github-ci.yml`** — one file, copy to `.github/workflows/awae-accessibility.yml`. Point them to `ci/README.md` for required secrets/variables. They set `AWAE_URLS`; the template does not build or serve their app
